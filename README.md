@@ -27,7 +27,7 @@ It further demonstrates that the library fits well into applications that implem
 
 ### Journals
 
-<i>Eventsourced</i> currently provides the following journal implementations.
+For persisting event messages, <i>Eventsourced</i> currently provides the following journal implementations:
 
 - [LeveldbJournal](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.journal.LeveldbJournal$), a [LevelDB](http://code.google.com/p/leveldb/) and [leveldbjni](https://github.com/fusesource/leveldbjni) based journal which is currently recommended for application development and operation. It comes with two different optimizations which are further explained in the [API docs](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.journal.LeveldbJournal$) (see methods `processorStructured` and `sequenceStructured`). It will also be used in the following examples. Because LevelDB is a native library, this journal requires a special project configuration as explained in section [Installation](#installation). 
 - [JournalioJournal](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.journal.JournalioJournal$), a [Journal.IO](https://github.com/sbtourist/Journal.IO) based journal. 
@@ -46,3 +46,41 @@ Installation
 ------------
 
 See [Installation](https://github.com/eligosource/eventsourced/wiki/Installation) Wiki page.
+
+First steps
+-----------
+
+Let's start with a simple example that demonstrates some basic library usage. The event-sourced actor (`OrderProcessor`), used in this example, consumes `OrderSubmitted` events, stores submitted orders in memory and produces ("emits") `OrderAccepted` events to a `Destination` via a channel. This is summarized in the following figure (legend is in [Appendix A](#appendix-a-legend)):
+
+![Order Example 1](https://raw.github.com/eligosource/eventsourced/wip-es-trait/doc/images/order-example-1.png)
+
+Any event message sent to `OrderProcessor` is written to a journal before it is received by the `OrderProcessor`. The state of the `OrderProcessor` can therefore be recovered by *replaying* those messages. During that replay, the `OrderProcessor` is still going to emit `OrderAccepted` events to the channel but the channel will only deliver those events to `Destination` that have not yet been successfully delivered before. The channel is able to distinguish successfully delivered events from others because it logs successful deliveries to the journal.
+
+The following subsections demonstrate two different ways to implement that example, first with a [low-level approach](#low-level-approach) and then with a [higher-level approach](#higher-level-approach) that uses more features from the library. Common to both approaches is the required creation and initialization of the [`EventsourcingExtension`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.EventsourcingExtension) (an Akka extension).
+
+    import java.io.File
+    import akka.actor._
+
+    import org.eligosource.eventsourced.core._
+    import org.eligosource.eventsourced.journal.LeveldbJournal
+
+    implicit val system = ActorSystem("example")
+
+    // create a journal
+    val journal = LeveldbJournal(new File("target/example"))
+
+    // create an event-sourcing Akka extension
+    val extension = EventsourcingExtension(system, journal)
+
+### Low-level approach
+
+…
+
+### Higher-level approach
+
+… 
+
+Appendix A: Legend
+------------------
+
+![Legend](https://raw.github.com/eligosource/eventsourced/wip-es-trait/doc/images/legend.png)
