@@ -30,19 +30,19 @@ object OrderExample1 extends App {
   implicit val timeout = Timeout(5 seconds)
 
   // create a journal
-  val journal = LeveldbJournal(new File("target/example"))
+  val journal: ActorRef = LeveldbJournal(new File("target/example"))
 
-  // create an event-sourcing Akka extension
+  // create and initialize an event-sourcing Akka extension
   val extension = EventsourcingExtension(system, journal)
 
   // create a destination for output event messages
-  val destination = system.actorOf(Props(new Destination))
+  val destination: ActorRef = system.actorOf(Props(new Destination))
 
   // create and register a channel
-  val channel = extension.channelOf(DefaultChannelProps(1, destination))
+  val channel: ActorRef = extension.channelOf(DefaultChannelProps(1, destination))
 
   // create an event-sourced order processor
-  val processor = extension.processorOf(ProcessorProps(1, new OrderProcessor(channel) with Eventsourced))
+  val processor: ActorRef = extension.processorOf(ProcessorProps(1, new OrderProcessor(channel) with Eventsourced))
 
   // recover state from (previously) journaled events
   extension.recover()
@@ -68,13 +68,11 @@ object OrderExample1 extends App {
     def receive = {
       case msg: Message => msg.event match {
         case OrderSubmitted(order) => {
-          val id = orders.size
-          // set order id and ...
-          val upd = order.copy(id = id)
-          // add order to existing orders
-          orders = orders + (id -> upd)
-          // derive output event message from input message
-          // and send it via "dest" channel to destination
+          val id = orders.size          // generate next id (= number of existing orders)
+          val upd = order.copy(id = id) // update submitted order with generated id
+          orders = orders + (id -> upd) // add submitted order to map of existing orders
+
+          // emit new event message containing the updated order
           channel ! msg.copy(event = OrderAccepted(upd))
         }
       }
