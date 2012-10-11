@@ -69,7 +69,7 @@ An `EventsourcingExtension` is initialized with an `ActorSystem` and a journal `
     import org.eligosource.eventsourced.journal._
 
     val system: ActorSystem = ActorSystem("example")
-    val journal: ActorRef = LeveldbJournal(new File("target/example"))
+    val journal: ActorRef = LeveldbJournal(new File("target/example-1"))
     val extension: EventsourcingExtension = EventsourcingExtension(system, journal)
 
 This example uses a [LevelDB](http://code.google.com/p/leveldb/) based journal but any other [journal implementation](#journals) can be used as well.
@@ -105,9 +105,9 @@ The `extension.processorOf` method registers that actor under a unique id given 
 
 ### Step 4: Event-sourced actor usage
 
-![Event-sourced actor](https://raw.github.com/eligosource/eventsourced/wip-es-trait/doc/images/firststeps-1.png)
-
 The event-sourced `processor` can be used like any other actor. Messages of type [`Message`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.Message) are appended to `journal` before the `processor`'s `receive` method is called. Messages of any other type are directly received by `processor` without being journaled.
+
+![Event-sourced actor](https://raw.github.com/eligosource/eventsourced/wip-es-trait/doc/images/firststeps-1.png)
 
     // send event message to processor (will be journaled)
     processor ! Message("foo")
@@ -129,7 +129,36 @@ on `stdout` where the first `println` is triggered by a replayed event message. 
 Processors
 ----------
 
-… 
+In this section, additional library features supporting the implementation and usage of event-sourced actors will be presented. Code from this section is contained in [Processors.scala](https://github.com/eligosource/eventsourced/blob/wip-es-trait/src/test/scala/org/eligosource/eventsourced/guide/Processors.scala) and can be executed with `sbt 'test:run-nobootcp org.eligosource.eventsourced.guide.Processors'`
+
+### `Receiver` modification
+
+![Event-sourced receiver actor](https://raw.github.com/eligosource/eventsourced/wip-es-trait/doc/images/processors-1.png)
+
+Processors can additionally be modified with the stackable [`Receiver`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.Receiver) trait to pattern match against events directly, instead of event `Message`s. For example,
+
+    val processor: ActorRef = extension.processorOf(ProcessorProps(1, new Processor with Receiver with Eventsourced))
+
+    class Processor extends Actor {
+      def receive = {
+        case "foo" => println("received event foo")
+      }
+    }
+
+    processor ! Message("foo")
+
+will write `received event foo` to `stdout`. In order to obtain the current event message, the `Processor` actor must be defined with a `Receiver` self type and use the `Receiver.message` method. This is done in the following example which obtains the sequence number of the current event message.
+
+    class Processor extends Actor { this: Receiver =>
+      def receive = {
+        case "foo" => println("received event foo (sequence number = %d)" format message.sequenceNr)
+      }
+    }
+
+    processor ! Message("foo")
+
+This will write `received event foo (sequence number = 2)` to `stdout` (the actual sequence number may differ). Refer to the [`Receiver`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.Receiver) API docs for details.
+
 
 Channels
 --------

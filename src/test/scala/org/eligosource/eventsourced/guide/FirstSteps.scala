@@ -26,10 +26,9 @@ import org.eligosource.eventsourced.journal.LeveldbJournal
 
 object FirstSteps extends App {
   implicit val system = ActorSystem("example")
-  implicit val timeout = Timeout(5 seconds)
 
   // create a journal
-  val journal: ActorRef = LeveldbJournal(new File("target/example"))
+  val journal: ActorRef = LeveldbJournal(new File("target/example-1"))
 
   // create an event-sourcing extension
   val extension = EventsourcingExtension(system, journal)
