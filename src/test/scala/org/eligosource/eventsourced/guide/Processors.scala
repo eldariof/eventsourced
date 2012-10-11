@@ -18,12 +18,16 @@ object Processors extends App {
   val journal: ActorRef = LeveldbJournal(new File("target/example-2"))
 
   // create an event-sourcing extension
-  val extension = EventsourcingExtension(system, journal)
+  implicit val extension = EventsourcingExtension(system, journal)
 
   // event-sourced processor definition
   class Processor extends Actor { this: Receiver =>
     def receive = {
-      case "foo" => println("received event foo (sequence number = %d)" format message.sequenceNr)
+      case "foo" => {
+        println("received event foo (sequence number = %d)" format message.sequenceNr)
+        // make an application-level response (need not be an event message)
+        initiator ! "processed event foo"
+      }
     }
   }
 
@@ -35,6 +39,16 @@ object Processors extends App {
 
   // send event message to processor
   processor ! Message("foo")
+
+  // send event message to processor and receive system-level response
+  processor ? Message("foo") onSuccess {
+    case Ack => println("event message journaled")
+  }
+
+  // send event message to processor and receive application-level response
+  processor ?? Message("foo") onSuccess {
+    case resp => println(resp)
+  }
 
   // wait for all messages to arrive (graceful shutdown coming soon)
   Thread.sleep(1000)
