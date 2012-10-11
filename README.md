@@ -50,90 +50,89 @@ See [Installation](https://github.com/eligosource/eventsourced/wiki/Installation
 First steps
 -----------
 
-Let's start with a simple example that demonstrates some basic library usage. An event-sourced actor (`OrderProcessor`) consumes `OrderSubmitted` events, stores the submitted orders in memory and produces ("emits") `OrderAccepted` events to a `Destination` via a channel. This is summarized in the following figure (legend is in [Appendix A](#appendix-a-legend)):
+This section guides through the minimum steps required to create, use and recover an event-sourced actor. Code from this section is contained in [FirstSteps.scala](https://github.com/eligosource/eventsourced/blob/wip-es-trait/src/test/scala/org/eligosource/eventsourced/guide/FirstSteps.scala) and can be executed with `sbt 'test:run-nobootcp org.eligosource.eventsourced.guide.FirstSteps'` (click [here](https://github.com/eligosource/eventsourced/wiki/Installation) for details about the `run-nobootcp` task). The legend to the figures used in this and other sections is in [Appendix A](#appendix-a-legend).
 
-![Order Example 1](https://raw.github.com/eligosource/eventsourced/wip-es-trait/doc/images/order-example-1.png)
+### Step 1: `EventsourcingExtension` initialization
 
-Events are always transported with an event [`Message`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.Message). Event messages sent to `OrderProcessor` are written to a journal before they are received by the `OrderProcessor`. The state of the `OrderProcessor` can therefore be recovered by *replaying* these messages. During a replay, the `OrderProcessor` still emits `OrderAccepted` events to the channel but the channel will only deliver those events to `Destination` that have not been successfully delivered yet. The channel is able to distinguish between successfully delivered events and not yet delivered events because it logs successful deliveries to the journal.
+[`EventsourcingExtension`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.EventsourcingExtension) is an Akka extension provided by the <i>Eventsourced</i> library. It is used by applications
 
-The following subsections present two different approaches for implementing the above example, a [low-level approach](#low-level-approach) and a [higher-level approach](#higher-level-approach). The low-level approach makes it more explicit how the different components of an event-sourced application interact, the higher-level approach shows how to reduce verbosity by using additional library features that support common use cases. 
+- as factory of event-sourced actors (called <i>processors</i> or <i>event processors</i>)
+- as factory of channels
+- as registry for processors and channels
+- to recover registered processors and channels from journaled event messages
 
-Both approaches need to create and initialize an [`EventsourcingExtension`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.EventsourcingExtension) with an actor `system` and a `journal`
+An `EventsourcingExtension` is initialized with an `ActorSystem` and a journal `ActorRef`.
 
     import java.io.File
     import akka.actor._
-
     import org.eligosource.eventsourced.core._
-    import org.eligosource.eventsourced.journal.LeveldbJournal
+    import org.eligosource.eventsourced.journal._
 
-    implicit val system = ActorSystem("example")
-
-    // create a journal
+    val system: ActorSystem = ActorSystem("example")
     val journal: ActorRef = LeveldbJournal(new File("target/example"))
+    val extension: EventsourcingExtension = EventsourcingExtension(system, journal)
 
-    // create and initialize an event-sourcing Akka extension
-    val extension = EventsourcingExtension(system, journal)
+This example uses a [LevelDB](http://code.google.com/p/leveldb/) based journal but any other [journal implementation](#journals) can be used as well.
 
-and share the definition of domain events and domain objects:
+### Step 2: Event-sourced actor definition
 
-    // domain events
-    case class OrderSubmitted(order: Order)
-    case class OrderAccepted(order: Order)
+Event-sourced actors can be defined as 'plain' actors i.e. they don't need to care about appending received event messages to a journal. For example,
 
-    // domain object
-    case class Order(id: Int, details: String, validated: Boolean, creditCardNumber: String)
+    class Processor extends Actor {
+      var counter = 0;
 
-    object Order {
-      def apply(details: String): Order = apply(details, "")
-      def apply(details: String, creditCardNumber: String): Order = new Order(-1, details, false, creditCardNumber)
-    }
-
-### Low-level approach
-
-Code from this section is part of the project's test sources ([`OrderExample1`](https://github.com/eligosource/eventsourced/blob/wip-es-trait/src/test/scala/org/eligosource/eventsourced/example/OrderExample1.scala)) and can be executed with `sbt 'test:run-nobootcp org.eligosource.eventsourced.example.OrderExample1'` (see [here](eventsourced/wiki/Installation) for details about the `run-nobootcp` task).
-
-In this (rather verbose) approach, the `OrderProcessor` and `Destination` deal with event [`Message`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.Message)s directly. Furthermore, the channel is passed to the `OrderProcessor` constructor as `ActorRef`:
-
-
-    // event
-    class OrderProcessor(channel: ActorRef) extends Actor {
-      var orders = Map.empty[Int, Order] // processor state
-  
-      def receive = {
-        case msg: Message => msg.event match {
-          case OrderSubmitted(order) => {
-            val id = orders.size          // generate next id (= number of existing orders)
-            val upd = order.copy(id = id) // update submitted order with generated id
-            orders = orders + (id -> upd) // add submitted order to map of existing orders
-  
-            // emit new event message containing the updated order
-            channel ! msg.copy(event = OrderAccepted(upd))
-          }
-        }
-      }
-    }
-
-When receiving an event message, the actor extracts the submitted `order` from the `OrderSubmitted` event, updates the `order` with a generated `id` and emits an `OrderAccepted` event, containing the updated order, to `channel`. The emitted event is contained in an event message that is derived from the received `msg`.
-
-One important thing to note is that the `OrderProcessor` is a plain actor that doesn't need to care about writing event messages to a journal. Event-sourcing functionality (including journaling, recovery, …) is added later by modifying `OrderProcessor` with the stackable [`Eventsourced`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.Eventsourced) trait during instantiation (see later). 
-
-When `OrderProcessor` emits an event message to `channel`, it is delivered to the channel's destination. Channel destinations are actors as well. They must acknowledge the receipt of an event message by replying with an [`Ack`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.package$$Ack$), as done in our example:
-
-    class Destination extends Actor {
       def receive = {
         case msg: Message => {
-          println("received event %s" format msg.event)
-          // acknowledge event message receipt to channel
-          sender ! Ack
+          counter = counter + 1
+          println("received message #%d" format counter)
         }
       }
     }
 
-When the channel receives an `Ack` reply, it logs the successful delivery of that message to the journal. 
+is an actor that counts the number of received event [`Message`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.Message)s. In <i>Eventsourced</i> applications, events are always communicated (transported) via event `Message`s.
+
+### Step 3: Event-sourced actor creation and recovery
+
+To make `Processor` an event-sourced actor, it is modified with the stackable [`Eventsourced`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.Eventsourced) trait during instantiation. 
+
+    // create and register event-sourced processor
+    val processor: ActorRef = extension.processorOf(ProcessorProps(1, new Processor with Eventsourced))
+
+    // recover registered processors by replaying journaled events
+    extension.recover()
+
+The `extension.processorOf` method registers that actor under a unique id given by the `ProcessorProps` configuration object and returns an `ActorRef` for the event-sourced actor. The `extension.recover` method recovers the state of `processor` by replaying event messages that `processor` received in previous application runs. 
+
+### Step 4: Event-sourced actor usage
+
+![Event-sourced actor](https://raw.github.com/eligosource/eventsourced/wip-es-trait/doc/images/firststeps-1.png)
+
+The event-sourced `processor` can be used like any other actor. Messages of type [`Message`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.Message) are appended to `journal` before the `processor`'s `receive` method is called. Messages of any other type are directly received by `processor` without being journaled.
+
+    // send event message to processor (will be journaled)
+    processor ! Message("foo")
+
+    // send non-event message to processor (will not be journaled)
+    processor ! "bar"
+
+A first application application run will create an empty journal. Hence, no event messages will be replayed and the `processor` writes
+
+    received message #1
+
+to `stdout`. When the application is restarted, however, the `processor`'s state will be recovered by replaying the previously journaled event message. Then, the application sends another event message. We will therefore see
+
+    received message #1
+    received message #2
+
+on `stdout` where the first `println` is triggered by a replayed event message. The following sections will introduce further library features step by step.
+
+Processors
+----------
 
 … 
 
-### Higher-level approach
+Channels
+--------
 
 … 
 
