@@ -161,39 +161,7 @@ This will write `received event foo (sequence number = 2)` to `stdout` (the actu
 
 ### Processor replies
 
-![Replies](https://raw.github.com/eligosource/eventsourced/wip-es-trait/doc/images/processors-2.png)
-
-Event-sourced actors reply with an [`Ack`](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.package$$Ack$) (acknowledgement) to event message senders once the event message has been journaled. 
-
-    processor ? Message("foo") onSuccess {
-      case Ack => println("event message journaled")
-    }
-
-Letting the library sending an `Ack` to the current sender was a conscious design decision: in event-sourced applications, event processors usually confirm the successful receipt of events but do not directly send application-level responses. Instead, they produce new events which are then consumed by other event processors.
-
-Should applications still want to send application-level responses, they can do so by using the `Message.sender` field (which can also be obtained via the `Receiver.initiator` method for the current event message). Applications can set `Message.sender` to an `ActorRef` that should receive the response(s). A more convenient approach is to use the `??` method that is added to `ActorRef` via implicit conversion. It allows processors to make application-level responses to the `Future` returned by `??`.
-
-    processor ?? Message("foo") onSuccess {
-      case resp => println(resp)
-    }
-
-where `processor` is defined as
-
-    class Processor extends Actor { this: Receiver =>
-      def receive = {
-        case "foo" => {
-          println("received event foo (sequence number = %d)" format message.sequenceNr)
-          // make an application-level response (need not be an event message)
-          initiator ! "processed event foo" 
-        }
-      }
-    }
-
-The `??` method has a `Message` parameter and returns a `Future`. Before sending the event message, `??` sets the `Message.sender` field to a value that represents the returned future. Actors that reply to `Message.sender`, either directly or via `Receiver.initiator`, will complete the future. 
-
-This custom response mechanism even allows applications to pass sender references along a sequence of processors, where each processor is connected to the next processor by a [channel](#channels) and only the last processor replies to the sender reference. Each processor in that sequence, however, stills needs to send an `Ack` to the channel from which it received the event message. This is a good example how mechanisms for reliable message delivery can be combined with application-level responses. This is especially useful for command-sourcing where application-level responses to commands are common.
-
-Replies to non-event messages follow the same semantics that are known from plain actors.
+… 
 
 ### Behavior changes
 
