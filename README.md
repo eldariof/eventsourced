@@ -35,6 +35,10 @@ For persisting event messages, <i>Eventsourced</i> currently provides the follow
 
 Further journal implementations are planned, including distributed, highly-available and horizontally scalable journals (based on [Apache BookKeeper](http://zookeeper.apache.org/bookkeeper/) or [Redis](http://redis.io/), for example). Also planned for the near future is a journal plugin API and an event archive.
 
+### Sponsor
+
+This project is sponsored by [Eligotech B.V.](http://www.eligotech.com/)
+
 ### Resources
 
 - [Eventsourced API](http://eligosource.github.com/eventsourced/#org.eligosource.eventsourced.core.package)
